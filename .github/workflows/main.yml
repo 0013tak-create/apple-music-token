@@ -1,0 +1,62 @@
+name: Generate Apple Music Token
+
+on:
+  schedule:
+    - cron: '0 0 1 * *' # 毎月1日に自動実行
+  workflow_dispatch: # 手動実行用ボタン
+
+jobs:
+  generate-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install PyJWT
+        run: pip install PyJWT cryptography
+
+      - name: Generate JWT Token
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
+          APPLE_PRIVATE_KEY: ${{ secrets.APPLE_PRIVATE_KEY }}
+        run: |
+          cat << 'EOF' > generate.py
+          import jwt
+          import time
+          import os
+          import json
+
+          team_id = os.environ['APPLE_TEAM_ID']
+          key_id = os.environ['APPLE_KEY_ID']
+          private_key = os.environ['APPLE_PRIVATE_KEY']
+
+          headers = {
+              'alg': 'ES256',
+              'kid': key_id
+          }
+
+          payload = {
+              'iss': team_id,
+              'iat': int(time.time()),
+              'exp': int(time.time()) + 15777000 # 6ヶ月有効
+          }
+
+          token = jwt.encode(payload, private_key, algorithm='ES256', headers=headers)
+          
+          os.makedirs('public', exist_ok=True)
+          with open('public/token.json', 'w') as f:
+              json.dump({"token": token}, f)
+          EOF
+          python generate.py
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
